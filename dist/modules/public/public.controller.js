@@ -90,17 +90,29 @@ exports.getAwardCandidates = (0, asyncHandler_1.asyncHandler)(async (req, res, n
             candidate: true,
             category: {
                 select: { name: true, slug: true }
-            },
-            _count: {
-                select: { nominations: { where: { status: 'CONFIRMED' } } }
             }
         },
         orderBy: { displayOrder: 'asc' }
     });
+    const awardCandidateIds = candidates.map((ac) => ac.id);
+    const votesData = await database_1.prisma.nomination.groupBy({
+        by: ['awardCandidateId'],
+        _sum: { votes: true },
+        where: {
+            awardCandidateId: { in: awardCandidateIds },
+            status: 'CONFIRMED'
+        }
+    });
+    const votesMap = new Map();
+    votesData.forEach((v) => {
+        votesMap.set(v.awardCandidateId, v._sum.votes || 0);
+    });
     const formatted = candidates.map((ac) => {
-        const target = ac.nominationTarget || award.nominationTarget || 100;
-        const confirmed = ac._count?.nominations || 0;
-        const percentage = Math.min(Math.round((confirmed / target) * 100), 100);
+        const target = (ac.nominationTarget && ac.nominationTarget > 0)
+            ? ac.nominationTarget
+            : ((award.nominationTarget && award.nominationTarget > 0) ? award.nominationTarget : 100);
+        const confirmed = votesMap.get(ac.id) || 0;
+        const percentage = target > 0 ? Math.min(Math.round((confirmed / target) * 100), 100) : 0;
         return {
             id: ac.candidate.id,
             awardCandidateId: ac.id,

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadImage = exports.updateCategory = exports.createCategory = exports.getCategories = exports.updateCandidate = exports.updateAward = exports.createCandidate = exports.getCandidates = exports.getReports = exports.createAward = exports.getAwards = exports.getDashboard = void 0;
+exports.deleteCandidate = exports.deleteCategory = exports.deleteAward = exports.uploadImage = exports.updateCategory = exports.createCategory = exports.getCategories = exports.updateCandidate = exports.updateAward = exports.createCandidate = exports.getCandidates = exports.getReports = exports.createAward = exports.getAwards = exports.getDashboard = void 0;
 const database_1 = require("../../config/database");
 const asyncHandler_1 = require("../../utils/asyncHandler");
 exports.getDashboard = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -48,22 +48,74 @@ exports.createAward = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
         const platform = await database_1.prisma.platform.findFirst();
         platformId = platform?.id;
     }
-    const { name, slug, description, shortDescription, visibility, imageUrl, nominationFee, nominationTarget, startsAt, endsAt } = req.body;
-    const award = await database_1.prisma.award.create({
-        data: {
-            platformId,
-            name,
-            slug,
-            description,
-            shortDescription,
-            imageUrl,
-            nominationFee: nominationFee ? parseInt(nominationFee) : null,
-            nominationTarget: nominationTarget ? parseInt(nominationTarget) : null,
-            startsAt: startsAt ? new Date(startsAt) : new Date(),
-            endsAt: endsAt ? new Date(endsAt) : new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-            visibility: visibility || 'PUBLIC',
-            status: 'DRAFT'
+    const { name, slug, description, shortDescription, visibility, imageUrl, nominationFee, nominationTarget, startsAt, endsAt, categories } = req.body;
+    const award = await database_1.prisma.$transaction(async (tx) => {
+        const createdAward = await tx.award.create({
+            data: {
+                platformId,
+                name,
+                slug,
+                description,
+                shortDescription,
+                imageUrl,
+                nominationFee: (nominationFee !== undefined && nominationFee !== null && nominationFee !== '') ? parseInt(nominationFee) : null,
+                nominationTarget: (nominationTarget !== undefined && nominationTarget !== null && nominationTarget !== '') ? parseInt(nominationTarget) : null,
+                startsAt: startsAt ? new Date(startsAt) : new Date(),
+                endsAt: endsAt ? new Date(endsAt) : new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+                visibility: visibility || 'PUBLIC',
+                status: 'DRAFT'
+            }
+        });
+        if (categories && Array.isArray(categories) && categories.length > 0) {
+            for (let i = 0; i < categories.length; i++) {
+                const catData = categories[i];
+                if (!catData.name || !catData.name.trim())
+                    continue;
+                const catSlug = catData.slug ||
+                    catData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Math.random().toString(36).substring(2, 6);
+                const createdCategory = await tx.category.create({
+                    data: {
+                        awardId: createdAward.id,
+                        name: catData.name.trim(),
+                        slug: catSlug,
+                        description: catData.description || null,
+                        displayOrder: i,
+                        status: 'ACTIVE'
+                    }
+                });
+                if (catData.candidates && Array.isArray(catData.candidates) && catData.candidates.length > 0) {
+                    for (let j = 0; j < catData.candidates.length; j++) {
+                        const candData = catData.candidates[j];
+                        if (!candData.name || !candData.name.trim())
+                            continue;
+                        const candSlug = candData.slug ||
+                            candData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Date.now().toString().slice(-4) + Math.random().toString(36).substring(2, 5);
+                        const createdCandidate = await tx.candidate.create({
+                            data: {
+                                name: candData.name.trim(),
+                                slug: candSlug,
+                                title: candData.title || null,
+                                organization: candData.organization || null,
+                                biography: candData.biography || null,
+                                achievements: candData.achievements || null,
+                                photoUrl: candData.photoUrl || null,
+                                status: 'ACTIVE'
+                            }
+                        });
+                        await tx.awardCandidate.create({
+                            data: {
+                                awardId: createdAward.id,
+                                categoryId: createdCategory.id,
+                                candidateId: createdCandidate.id,
+                                displayOrder: j,
+                                status: 'ACTIVE'
+                            }
+                        });
+                    }
+                }
+            }
         }
+        return createdAward;
     });
     // Audit log
     await database_1.prisma.auditLog.create({
@@ -197,28 +249,29 @@ exports.createCandidate = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     res.status(201).json({ success: true, data: candidate });
 });
 exports.updateAward = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const idOrSlug = req.params.id;
+    const id = req.params.id;
     const platformId = req.user.role === 'SUPER_ADMIN' ? undefined : req.user.platformId;
-    const existing = await database_1.prisma.award.findFirst({
-        where: {
-            OR: [{ id: idOrSlug }, { slug: idOrSlug }],
-            ...(platformId ? { platformId } : {})
-        }
-    });
+    const existing = await database_1.prisma.award.findFirst({ where: { id, platformId } });
     if (!existing) {
         res.status(404).json({ success: false, message: 'Award not found' });
         return;
     }
     const dataToUpdate = { ...req.body };
-    if (dataToUpdate.nominationFee)
-        dataToUpdate.nominationFee = parseInt(dataToUpdate.nominationFee);
-    if (dataToUpdate.nominationTarget)
-        dataToUpdate.nominationTarget = parseInt(dataToUpdate.nominationTarget);
+    if (dataToUpdate.nominationFee !== undefined) {
+        dataToUpdate.nominationFee = (dataToUpdate.nominationFee !== null && dataToUpdate.nominationFee !== '')
+            ? parseInt(dataToUpdate.nominationFee)
+            : null;
+    }
+    if (dataToUpdate.nominationTarget !== undefined) {
+        dataToUpdate.nominationTarget = (dataToUpdate.nominationTarget !== null && dataToUpdate.nominationTarget !== '')
+            ? parseInt(dataToUpdate.nominationTarget)
+            : null;
+    }
     if (dataToUpdate.startsAt)
         dataToUpdate.startsAt = new Date(dataToUpdate.startsAt);
     if (dataToUpdate.endsAt)
         dataToUpdate.endsAt = new Date(dataToUpdate.endsAt);
-    const updated = await database_1.prisma.award.update({ where: { id: existing.id }, data: dataToUpdate });
+    const updated = await database_1.prisma.award.update({ where: { id }, data: dataToUpdate });
     res.status(200).json({ success: true, data: updated });
 });
 exports.updateCandidate = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -267,17 +320,8 @@ exports.createCategory = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     res.status(201).json({ success: true, data: category });
 });
 exports.updateCategory = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const idOrSlug = req.params.id;
-    const existing = await database_1.prisma.category.findFirst({
-        where: {
-            OR: [{ id: idOrSlug }, { slug: idOrSlug }]
-        }
-    });
-    if (!existing) {
-        res.status(404).json({ success: false, message: 'Category not found' });
-        return;
-    }
-    const updated = await database_1.prisma.category.update({ where: { id: existing.id }, data: req.body });
+    const id = req.params.id;
+    const updated = await database_1.prisma.category.update({ where: { id }, data: req.body });
     res.status(200).json({ success: true, data: updated });
 });
 exports.uploadImage = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -288,4 +332,20 @@ exports.uploadImage = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     // multer-storage-cloudinary sets the full URL in req.file.path
     const fileUrl = req.file.path;
     res.status(200).json({ success: true, data: { url: fileUrl } });
+});
+exports.deleteAward = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const id = req.params.id;
+    await database_1.prisma.award.delete({ where: { id } });
+    res.status(200).json({ success: true, message: 'Award deleted successfully' });
+});
+exports.deleteCategory = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const id = req.params.id;
+    await database_1.prisma.category.delete({ where: { id } });
+    res.status(200).json({ success: true, message: 'Category deleted successfully' });
+});
+exports.deleteCandidate = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const id = req.params.id;
+    await database_1.prisma.awardCandidate.deleteMany({ where: { candidateId: id } });
+    await database_1.prisma.candidate.delete({ where: { id } });
+    res.status(200).json({ success: true, message: 'Candidate deleted successfully' });
 });
