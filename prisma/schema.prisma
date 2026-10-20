@@ -1,0 +1,245 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+}
+
+enum PlatformStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AwardStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum AwardVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CandidateStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AwardCandidateStatus {
+  ACTIVE
+  INACTIVE
+  WITHDRAWN
+}
+
+enum NominationStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  INITIALIZED
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  UNVERIFIED
+}
+
+model AdminUser {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  plainPassword String?
+  role          Role
+  platformId   String?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  platform  Platform?  @relation(fields: [platformId], references: [id])
+  auditLogs AuditLog[]
+}
+
+model Platform {
+  id           String         @id @default(uuid())
+  name         String
+  slug         String         @unique
+  description  String?
+  logoUrl      String?
+  status       PlatformStatus @default(ACTIVE)
+  ownerAdminId String?        @unique
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  adminUsers AdminUser[]
+  awards     Award[]
+  settings   PlatformSettings?
+  auditLogs  AuditLog[]
+}
+
+model PlatformSettings {
+  id                      String   @id @default(uuid())
+  platformId              String   @unique
+  nominationFee           Int // Stored in minor units (e.g. pesewas)
+  creatorFeePercentage    Decimal  @db.Decimal(5, 2)
+  paystackFeePercentage   Decimal  @db.Decimal(5, 2)
+  defaultNominationTarget Int      @default(100)
+  currency                String   @default("GHS")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  platform Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+}
+
+model Award {
+  id               String          @id @default(uuid())
+  platformId       String
+  name             String
+  slug             String
+  shortDescription String?
+  description      String?
+  imageUrl         String?
+  status           AwardStatus     @default(DRAFT)
+  visibility       AwardVisibility @default(PUBLIC)
+  nominationFee    Int? // Overrides platform setting if present
+  nominationTarget Int? // Overrides platform setting if present
+  startsAt         DateTime
+  endsAt           DateTime
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  platform   Platform         @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  categories Category[]
+  candidates AwardCandidate[]
+
+  @@unique([platformId, slug])
+}
+
+model Category {
+  id           String         @id @default(uuid())
+  awardId      String
+  name         String
+  slug         String
+  description  String?
+  displayOrder Int            @default(0)
+  status       CategoryStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  award           Award            @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  awardCandidates AwardCandidate[]
+
+  @@unique([awardId, slug])
+}
+
+model Candidate {
+  id           String          @id @default(uuid())
+  name         String
+  slug         String          @unique
+  photoUrl     String?
+  title        String?
+  organization String?
+  biography    String?
+  achievements String?
+  location     String?
+  website      String?
+  socialLinks  Json?
+  status       CandidateStatus @default(ACTIVE)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  awards AwardCandidate[]
+}
+
+model AwardCandidate {
+  id               String               @id @default(uuid())
+  awardId          String
+  candidateId      String
+  categoryId       String
+  nominationTarget Int?
+  status           AwardCandidateStatus @default(ACTIVE)
+  displayOrder     Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  award       Award        @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  nominations Nomination[]
+
+  @@unique([awardId, candidateId, categoryId])
+}
+
+model Nomination {
+  id                   String           @id @default(uuid())
+  awardCandidateId     String
+  nominatorEmail       String?
+  paymentTransactionId String?          @unique
+  reference            String           @unique
+  status               NominationStatus @default(PENDING)
+  votes                Int              @default(1)
+  createdAt            DateTime         @default(now())
+  confirmedAt          DateTime?
+
+  awardCandidate     AwardCandidate      @relation(fields: [awardCandidateId], references: [id], onDelete: Cascade)
+  paymentTransaction PaymentTransaction?
+}
+
+model PaymentTransaction {
+  id                    String        @id @default(uuid())
+  nominationId          String        @unique
+  paystackReference     String?       @unique
+  baseAmount            Int
+  paystackFee           Int
+  paystackFeePercentage Decimal       @db.Decimal(5, 2)
+  creatorFee            Int
+  creatorFeePercentage  Decimal       @db.Decimal(5, 2)
+  customerPays          Int
+  ownerNet              Int
+  currency              String        @default("GHS")
+  status                PaymentStatus @default(INITIALIZED)
+  channel               String?
+  gatewayResponse       String?
+  paidAt                DateTime?
+  verifiedAt            DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  nomination Nomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminUserId String?
+  platformId  String?
+  action      String
+  entity      String
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+  platform  Platform?  @relation(fields: [platformId], references: [id], onDelete: SetNull)
+}
