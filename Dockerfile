@@ -1,6 +1,9 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
+
+# Install native build tools required by argon2 and node-gyp
+RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
 COPY prisma ./prisma/
@@ -9,12 +12,17 @@ RUN npm install
 
 COPY . .
 
-RUN npm run build
+# Generate Prisma Client BEFORE compiling TypeScript
 RUN npx prisma generate
+RUN npm run build
 
-FROM node:20-alpine
+# Production Runner Stage
+FROM node:22-alpine
 
 WORKDIR /app
+
+# Prisma engine on Alpine requires OpenSSL
+RUN apk add --no-cache openssl
 
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
