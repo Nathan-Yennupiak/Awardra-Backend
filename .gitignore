@@ -8,3 +8,9 @@ node_modules
 .agents
 .windsurf
 .claude
+
+# Build output (tsc writes to dist/)
+dist
+src/**/*.d.ts
+*.map
+prisma/seed.js

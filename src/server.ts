@@ -1,6 +1,7 @@
 import app from './app';
 import { env } from './config/env';
 import { prisma } from './config/database';
+import { startNominationExpiryJob } from './jobs/expireStaleNominations';
 
 const PORT = env.PORT || 5000;
 
@@ -13,9 +14,12 @@ const startServer = async () => {
       console.log(`🚀 Server is running on port ${PORT}`);
     });
 
+    const stopExpiryJob = startNominationExpiryJob();
+
     // Graceful Shutdown
     const shutdown = async () => {
       console.log('🛑 Shutting down server...');
+      stopExpiryJob();
       server.close(async () => {
         await prisma.$disconnect();
         console.log('✅ Server shut down successfully');

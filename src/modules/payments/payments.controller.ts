@@ -10,7 +10,7 @@ export const paystackWebhook = asyncHandler(async (req: Request, res: Response) 
     return res.status(400).send('Signature missing');
   }
 
-  const isValid = PaystackService.verifySignature(req.body, signature);
+  const isValid = PaystackService.verifySignature(req.rawBody, signature);
   if (!isValid) {
     return res.status(400).send('Invalid signature');
   }

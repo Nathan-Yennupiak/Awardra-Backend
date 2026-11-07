@@ -1,3 +1,19 @@
+/** Most nominations a single checkout may buy. */
+export const MAX_VOTES_PER_NOMINATION = 10_000;
+
+/** Largest amount (minor units) that fits the Int columns on PaymentTransaction. */
+export const MAX_MINOR_AMOUNT = 2_147_483_647;
+
+export const DEFAULT_PAYSTACK_FEE_PERCENTAGE = 1.95;
+
+/**
+ * The Paystack fee percentage charged for a platform. Shared by checkout and the public
+ * API so the price shown before payment matches what is charged.
+ */
+export const resolvePaystackFeePercentage = (
+  settings?: { paystackFeePercentage?: unknown } | null
+): number => Number(settings?.paystackFeePercentage || DEFAULT_PAYSTACK_FEE_PERCENTAGE);
+
 export class FinancialCalculationService {
   /**
    * Calculates all financial values for a nomination

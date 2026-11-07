@@ -7,6 +7,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: any;
+      /** Unparsed request body, captured by express.json() in app.ts. */
+      rawBody?: Buffer;
     }
   }
 }

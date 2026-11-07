@@ -27,9 +27,11 @@ Built with:
    ```
 3. Run migrations and seed data:
    ```bash
-   npx prisma migrate dev
-   npm run prisma:seed
+   npx prisma migrate deploy
+   npx prisma db seed
    ```
+   Use `npx prisma migrate dev` when you change `schema.prisma`. Never change the
+   database by hand or with `db push`; every schema change should be a migration.
 4. Start development server:
    ```bash
    npm run dev
@@ -50,5 +52,5 @@ All monetary values are calculated strictly using integer minor units (pesewas) 
 - **`/api/v1/super-admin`**: Platform-wide management and global analytics.
 - **`/api/v1/admin`**: Platform-specific management (awards, categories, candidates).
 - **`/api/v1/nominations`**: Initialize a new payment transaction.
-- **`/api/v1/payments/paystack/webhook`**: Verifies and confirms payments securely.
+- **`/api/v1/payments/paystack/webhook`**: Confirms payments. The signature is an HMAC-SHA512 of the raw request body keyed with `PAYSTACK_SECRET_KEY`.
 - **`/api/v1/` (Public)**: Fetch published awards and candidate progress.

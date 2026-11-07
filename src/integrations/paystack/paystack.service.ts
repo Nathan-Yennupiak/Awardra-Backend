@@ -54,12 +54,16 @@ export class PaystackService {
     return data.data;
   }
 
-  static verifySignature(payload: any, signature: string): boolean {
-    if (!signature || typeof signature !== 'string') return false;
-    
+  /**
+   * Paystack signs webhooks with HMAC-SHA512 of the raw request body, keyed with the
+   * account's secret key (there is no separate webhook secret).
+   */
+  static verifySignature(rawBody: Buffer | undefined, signature: string): boolean {
+    if (!rawBody || !signature || typeof signature !== 'string') return false;
+
     const hash = crypto
-      .createHmac('sha512', env.PAYSTACK_WEBHOOK_SECRET || env.PAYSTACK_SECRET_KEY)
-      .update(JSON.stringify(payload))
+      .createHmac('sha512', env.PAYSTACK_SECRET_KEY)
+      .update(rawBody)
       .digest('hex');
 
     const hashBuffer = Buffer.from(hash, 'utf8');

@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { prisma } from '../../config/database';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
-import { FinancialCalculationService } from '../../services/financial.service';
+import {
+  FinancialCalculationService,
+  MAX_MINOR_AMOUNT,
+  MAX_VOTES_PER_NOMINATION,
+  resolvePaystackFeePercentage,
+} from '../../services/financial.service';
 import { PaystackService } from '../../integrations/paystack/paystack.service';
 import crypto from 'crypto';
 
@@ -11,13 +16,14 @@ const initializeSchema = z.object({
   awardCandidateId: z.string().uuid(),
   email: z.string().email(),
   callbackUrl: z.string().url().optional(),
-  votes: z.number().int().min(1).optional().default(1),
+  votes: z.number().int().min(1).max(MAX_VOTES_PER_NOMINATION, `You can buy at most ${MAX_VOTES_PER_NOMINATION} nominations at once`).optional().default(1),
 });
 
 export const initializeNomination = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const parsed = initializeSchema.safeParse(req.body);
   if (!parsed.success) {
-    return next(new ApiError(400, 'Invalid request data'));
+    const votesIssue = parsed.error.issues.find((issue) => issue.path[0] === 'votes');
+    return next(new ApiError(400, votesIssue?.message || 'Invalid request data'));
   }
 
   const { awardCandidateId, email, callbackUrl, votes } = parsed.data;
@@ -50,15 +56,20 @@ export const initializeNomination = asyncHandler(async (req: Request, res: Respo
   const platformSettings = award.platform.settings;
   const singleBaseAmount = award.nominationFee || platformSettings?.nominationFee || 10000;
   const baseAmount = singleBaseAmount * votes;
-  const paystackFeePercentage = Number(platformSettings?.paystackFeePercentage || 1.95);
+  const paystackFeePercentage = resolvePaystackFeePercentage(platformSettings);
   const creatorFeePercentage = Number(platformSettings?.creatorFeePercentage || 5.00);
 
   // Financial calculations
   const financials = FinancialCalculationService.calculate(
-    baseAmount, 
-    paystackFeePercentage, 
+    baseAmount,
+    paystackFeePercentage,
     creatorFeePercentage
   );
+
+  // Amounts are stored in 32-bit integer columns.
+  if (financials.customerPays > MAX_MINOR_AMOUNT) {
+    return next(new ApiError(400, 'Total amount is too large; please buy fewer nominations at once'));
+  }
 
   // Create unique reference
   const reference = `NOM-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;

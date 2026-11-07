@@ -2,6 +2,16 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/database';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
+import { resolvePaystackFeePercentage } from '../../services/financial.service';
+
+/** The effective per-nomination fee and Paystack fee rate for an award (same rules as checkout). */
+const getAwardPricing = async (award: { platformId: string; nominationFee: number | null }) => {
+  const settings = await prisma.platformSettings.findUnique({ where: { platformId: award.platformId } });
+  return {
+    nominationFee: award.nominationFee || settings?.nominationFee || 10000,
+    paystackFeePercentage: resolvePaystackFeePercentage(settings),
+  };
+};
 
 export const getAwards = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const awards = await prisma.award.findMany({
@@ -48,14 +58,9 @@ export const getAwardBySlug = asyncHandler(async (req: Request, res: Response, n
 
   if (!award) return next(new ApiError(404, 'Award not found'));
 
-  if (award.nominationFee === null) {
-    const platformSettings = await prisma.platformSettings.findUnique({
-      where: { platformId: award.platformId }
-    });
-    award.nominationFee = platformSettings?.nominationFee || 10000;
-  }
+  const pricing = await getAwardPricing(award);
 
-  res.status(200).json({ success: true, data: award });
+  res.status(200).json({ success: true, data: { ...award, ...pricing } });
 });
 
 export const getAwardCategories = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
@@ -158,12 +163,7 @@ export const getCandidateProfile = asyncHandler(async (req: Request, res: Respon
 
   if (!award) return next(new ApiError(404, 'Award not found'));
 
-  if (award.nominationFee === null) {
-    const platformSettings = await prisma.platformSettings.findUnique({
-      where: { platformId: award.platformId }
-    });
-    award.nominationFee = platformSettings?.nominationFee || 10000;
-  }
+  const pricing = await getAwardPricing(award);
 
   const candidate = await prisma.candidate.findFirst({
     where: { slug: candidateSlug, status: 'ACTIVE' }
@@ -214,7 +214,8 @@ export const getCandidateProfile = asyncHandler(async (req: Request, res: Respon
       award: {
         name: award.name,
         slug: award.slug,
-        nominationFee: award.nominationFee,
+        nominationFee: pricing.nominationFee,
+        paystackFeePercentage: pricing.paystackFeePercentage,
       },
       category: awardCandidate.category,
       nominationProgress: {

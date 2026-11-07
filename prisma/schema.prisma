@@ -71,10 +71,10 @@ model AdminUser {
   passwordHash  String
   plainPassword String?
   role          Role
-  platformId   String?
-  status       String   @default("ACTIVE")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  platformId    String?
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   platform  Platform?  @relation(fields: [platformId], references: [id])
   auditLogs AuditLog[]
@@ -115,7 +115,7 @@ model Award {
   id               String          @id @default(uuid())
   platformId       String
   name             String
-  slug             String
+  slug             String          @unique // global: public URLs are /awards/:slug
   shortDescription String?
   description      String?
   imageUrl         String?
@@ -132,7 +132,7 @@ model Award {
   categories Category[]
   candidates AwardCandidate[]
 
-  @@unique([platformId, slug])
+  @@index([platformId])
 }
 
 model Category {
@@ -203,6 +203,8 @@ model Nomination {
 
   awardCandidate     AwardCandidate      @relation(fields: [awardCandidateId], references: [id], onDelete: Cascade)
   paymentTransaction PaymentTransaction?
+
+  @@index([status, createdAt]) // used by the pending-nomination expiry job
 }
 
 model PaymentTransaction {

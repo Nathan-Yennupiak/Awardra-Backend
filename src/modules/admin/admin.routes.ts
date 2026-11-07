@@ -4,6 +4,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import { env } from '../../config/env';
 import { authenticate, authorizeRole, requirePlatformAccess } from '../../middleware/auth';
+import { ApiError } from '../../utils/ApiError';
 import { 
   getDashboard, 
   getAwards, 
@@ -52,7 +53,7 @@ const upload = multer({
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only JPEG, PNG, WEBP, and GIF images are allowed.'));
+      cb(new ApiError(400, 'Invalid file type. Only JPEG, PNG, WEBP, GIF and SVG images are allowed.'));
     }
   },
 });
